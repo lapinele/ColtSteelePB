@@ -9,7 +9,8 @@ const ejsMate = require('ejs-mate');
 const Joi = require('joi');
 const wrapAsync = require('./utils/wrapAsync');
 const ExpressError=require('./utils/ExpressError');
-const {campgroundSchema}=require('./schemas');
+const {campgroundSchema,reviewSchema}=require('./schemas');
+const Review = require('./models/review');
 
 app.engine('ejs',ejsMate);
 
@@ -53,6 +54,18 @@ const validateCampground=(req,res,next)=>{
     }
 };
 
+const validateReview=(req,res,next) => {
+const {error} = reviewSchema.validate(req.body,{abortEarly: false});
+if(error){
+    const msg = error.details.map(el => el.message).join(',');
+    throw new ExpressError(msg, 400);
+}
+else{
+    next();
+}
+
+};
+
 app.get('/campgrounds', wrapAsync(async(req, res)=>{
 const campgrounds = await Campgroundy.find({});
 res.render('campgrounds/index',{campgrounds});
@@ -75,7 +88,8 @@ res.redirect(`/campgrounds/${campground.id}`);
 }));
 app.get('/campgrounds/:id',wrapAsync(async(req,res)=>{
     const {id}=req.params;
-    const campground = await Campgroundy.findById(id);
+    const campground = await Campgroundy.findById(id).populate('reviews');
+    //console.log(campground);
     res.render('campgrounds/show',{campground});
     }));
 
@@ -98,6 +112,24 @@ await Campgroundy.findByIdAndDelete(id);
 res.redirect(`/campgrounds`);
 
 }));
+
+app.post('/campgrounds/:id/reviews',validateReview,wrapAsync(async(req,res)=>{
+    
+const campground = await Campgroundy.findById(req.params.id);
+const review = new Review(req.body.review);
+campground.reviews.push(review);
+await review.save();
+await campground.save();
+res.redirect(`/campgrounds/${campground._id}`);
+}));
+
+app.delete('/campgrounds/:id/reviews/:reviewId',wrapAsync(async(req,res)=>{
+    const{id,reviewId} = req.params;
+    await Campgroundy.findByIdAndUpdate(id,{pull:{reviewId}});
+await Review.findByIdAndDelete(req.params.reviewId);
+res.redirect(`/campgrounds/${id}`);
+}));
+
 app.all('*',(req,res,next)=>{
 next(new ExpressError('Page Not Found',404));
 });
